@@ -3,8 +3,7 @@
 A real-time 9-DOF IMU telemetry dashboard built with PyQt5. Visualises simulated sensor data from an Inertial Measurement Unit including accelerometer, gyroscope, magnetometer, orientation, attitude, and system health — all updating live at ~25 fps.
 
 ## Demo
-
-<video src="demo.avi" controls width="720"></video>
+[▶ Watch Demo Video](https://drive.google.com/file/d/1tXcbIWaFnBWfy1-m_pV0NGa7fgq22Mg6/view?usp=sharing)
 
 ---
 
