@@ -18,7 +18,7 @@ import numpy as np
 import pyautogui
 
 OUTPUT_FILE = "demo.avi"
-DURATION    = 30        # seconds
+DURATION    = 60        # seconds
 FPS         = 15
 FRAME_DELAY = 1.0 / FPS
 
