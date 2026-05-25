@@ -962,6 +962,12 @@ class TrajectoryPage(QWidget):
                     padding: 12px;
                     margin-bottom: 8px;
                 """)
+                self.lbl_speed.setText("0.00")
+                self.lbl_vspeed.setText("0.00")
+                self.lbl_alt.setText("0.00")
+                self.prev_position = (x, 0.0, 180.0)
+                self.curr_position = (x, 0.0, 180.0)
+                self.anim_start_time = time.time()
                 return  # freeze display
 
             col, bg = phase_colors.get(phase, ("#FFFFFF", "transparent"))
