@@ -17,15 +17,15 @@ import cv2
 import numpy as np
 import pyautogui
 
-OUTPUT_FILE = "demo.avi"
-DURATION    = 60        # seconds
-FPS         = 15
+OUTPUT_FILE = "demo.mp4"
+DURATION    = 120        # seconds
+FPS         = 8
 FRAME_DELAY = 1.0 / FPS
 
 
 def record():
     screen_w, screen_h = pyautogui.size()
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out    = cv2.VideoWriter(OUTPUT_FILE, fourcc, FPS, (screen_w, screen_h))
 
     print(f"Recording {DURATION}s → {OUTPUT_FILE}  (Ctrl+C to stop early)")

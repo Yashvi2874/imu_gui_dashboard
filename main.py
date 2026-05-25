@@ -7,12 +7,14 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QPushButton, QSizePolicy, QSpacerItem,
     QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QTabWidget,
 )
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QColor, QPainter, QPen, QBrush, QPalette
+from PyQt5.QtGui import QFont, QColor, QPainter, QPen, QBrush, QPalette, QIcon, QPixmap
 
 import pyqtgraph as pg
 import numpy as np
+from trajectory import TrajectoryPage
 
 BG_DEEP     = "#0A0E1A"
 BG_CARD     = "#111827"
@@ -44,6 +46,10 @@ class IMUSimulator:
     def __init__(self):
         self.t    = 0.0
         self._yaw = 0.0
+        self.position_history = deque(maxlen=5000)
+        self.x = 0.0
+        self.y = 0.0
+        self.velocity = 0.0
 
     def step(self, dt=0.04):
         self.t += dt
@@ -91,6 +97,90 @@ class IMUSimulator:
         pressure = 1013.25 + 8.0 * math.sin(0.08 * t) + random.gauss(0, 0.15)
 
         return accel, gyro, mag, orient, lin_accel, self._vel, temp, pressure
+
+    def get_position(self, dt=0.04):
+        if not hasattr(self, 'position_history'):
+            self.position_history = deque(maxlen=5000)
+
+        t = self.t
+
+        # Reset downrange cache on restart
+        if t < 0.1:
+            if hasattr(self, '_downrange'):
+                delattr(self, '_downrange')
+
+        BURN_END  = 10.0
+        COAST_END = 25.0
+        APOGEE_T  = 27.0
+        BURN_PEAK = 2800.0    # altitude at end of burn
+        APOGEE_ALT = 3450.0   # peak altitude
+
+        if t <= BURN_END:
+            # Smooth power curve from 0 to BURN_PEAK
+            frac = t / BURN_END
+            alt = BURN_PEAK * (frac ** 0.55)
+            vertical_speed = (BURN_PEAK * 0.55 / BURN_END) * max(frac, 0.01) ** (-0.45)
+            accel_z = 140.0
+            phase = "BURN"
+
+        elif t <= COAST_END:
+            # Smooth continuation — cosine interpolation from BURN_PEAK to APOGEE_ALT
+            coast_t = t - BURN_END
+            coast_dur = COAST_END - BURN_END
+            frac = coast_t / coast_dur
+            # Cosine easing: starts fast, ends slow (approaching apogee)
+            ease = (1 - math.cos(frac * math.pi * 0.5))
+            burn_alt = BURN_PEAK  # alt at end of burn = BURN_PEAK
+            alt = burn_alt + (APOGEE_ALT - burn_alt) * ease
+            vertical_speed = (APOGEE_ALT - burn_alt) * math.pi * 0.5 / coast_dur * math.sin(frac * math.pi * 0.5)
+            accel_z = -9.81
+            phase = "COAST"
+
+        elif t <= APOGEE_T:
+            alt = APOGEE_ALT
+            vertical_speed = 0.0
+            accel_z = -9.81
+            phase = "APOGEE"
+
+        else:
+            descent_t = t - APOGEE_T
+            alt = max(0.0, APOGEE_ALT - 0.5 * 18.0 * descent_t ** 2)
+            vertical_speed = -(18.0 * descent_t)
+            accel_z = -9.81
+            if alt <= 0:
+                alt = 0.0
+                vertical_speed = 0.0
+                accel_z = 0.0
+                phase = "LANDED"
+            else:
+                phase = "DESCENT"
+
+        # Horizontal downrange
+        if phase in ("DESCENT", "LANDED"):
+            if not hasattr(self, '_downrange'):
+                self._downrange = 0.5 * APOGEE_T
+            self._downrange += 2.5 * dt
+            downrange = self._downrange
+        else:
+            self._downrange = 2.5 * t + 4.0 * math.sin(0.08 * t)
+            downrange = self._downrange
+
+        alt = max(0.0, alt + random.gauss(0, 1.5))
+
+        pos_dict = {
+            "x":             float(downrange),
+            "y":             float(alt),
+            "alt":           float(alt),
+            "heading":       float(self._yaw),
+            "speed":         float(abs(vertical_speed)),
+            "vertical_speed": float(vertical_speed),
+            "accel_z":       float(accel_z),
+            "phase":         phase,
+            "t":             float(t),
+            "apogee":        float(APOGEE_ALT),
+        }
+        self.position_history.append(pos_dict)
+        return pos_dict
 
 
 def make_separator(vertical=False):
@@ -506,18 +596,53 @@ class IMUDashboard(QMainWindow):
             "mag":    {k: deque([0.0] * HISTORY, maxlen=HISTORY) for k in ["X", "Y", "Z"]},
             "orient": {k: deque([0.0] * HISTORY, maxlen=HISTORY) for k in ["Roll", "Pitch", "Yaw"]},
         }
-        self.sim          = IMUSimulator()
+        self.simulator    = IMUSimulator()
         self.elapsed      = 0.0
         self.running      = True
         self._plots_built = False
         self._telemetry   = []          # 1 Hz log records
         self._last_log_t  = -1.0        # last logged second
 
+        # Create QTabWidget and style it
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: none;
+                background: {BG_DEEP};
+            }}
+            QTabBar {{
+                background: {BG_DEEP};
+            }}
+            QTabBar::tab {{
+                background: {BG_DEEP};
+                color: #4A5568;
+                height: 38px;
+                padding: 0 20px;
+                min-width: 260px;
+                font-family: 'Courier New';
+                font-size: 12pt;
+                font-weight: bold;
+                border: none;
+            }}
+            QTabBar::tab:selected {{
+                color: #00E5FF;
+                background: {BG_DEEP};
+            }}
+            QTabBar::tab:hover {{
+                color: #00E5FF;
+            }}
+        """)
+        self.setCentralWidget(self.tabs)
+
         self._build_ui()
         self._build_plots()
 
+        self.trajectory_page = TrajectoryPage(self.simulator)
+        self.tabs.addTab(self.trajectory_page, "  Trajectory  ")
+
         self.timer = QTimer()
         self.timer.timeout.connect(self._tick)
+        self.timer.timeout.connect(self.trajectory_page.update)
         self.timer.start(UPDATE_MS)
 
     def _section_label(self, text):
@@ -531,7 +656,7 @@ class IMUDashboard(QMainWindow):
     def _build_ui(self):
         root = QWidget()
         root.setStyleSheet(f"background: {BG_DEEP};")
-        self.setCentralWidget(root)
+        self.tabs.addTab(root, "  IMU Dashboard  ")
 
         master = QVBoxLayout(root)
         master.setContentsMargins(12, 8, 12, 8)
@@ -552,13 +677,13 @@ class IMUDashboard(QMainWindow):
 
         self.pause_btn = QPushButton("⏸ PAUSE")
         self.pause_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.pause_btn.setFixedHeight(30)
+        self.pause_btn.setFixedHeight(36)
         self.pause_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {BG_CARD2}; color: {ACCENT_YEL};
                 border: 1px solid {ACCENT_YEL}55; border-radius: 4px;
-                font-family: 'Courier New'; font-size: 11pt; font-weight: bold;
-                padding: 0 12px;
+                font-family: 'Courier New'; font-size: 13pt; font-weight: bold;
+                padding: 0 16px;
             }}
             QPushButton:hover {{ background: {ACCENT_YEL}22; }}
         """)
@@ -566,13 +691,13 @@ class IMUDashboard(QMainWindow):
 
         self.telem_btn = QPushButton("📋 TELEMETRY")
         self.telem_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.telem_btn.setFixedHeight(30)
+        self.telem_btn.setFixedHeight(36)
         self.telem_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {BG_CARD2}; color: {ACCENT_CYAN};
                 border: 1px solid {ACCENT_CYAN}55; border-radius: 4px;
-                font-family: 'Courier New'; font-size: 11pt; font-weight: bold;
-                padding: 0 12px;
+                font-family: 'Courier New'; font-size: 13pt; font-weight: bold;
+                padding: 0 16px;
             }}
             QPushButton:hover {{ background: {ACCENT_CYAN}22; }}
         """)
@@ -743,7 +868,7 @@ class IMUDashboard(QMainWindow):
 
         dt = UPDATE_MS / 1000.0
         self.elapsed += dt
-        accel, gyro, mag, orient, lin_accel, vel, temp, pressure = self.sim.step(dt)
+        accel, gyro, mag, orient, lin_accel, vel, temp, pressure = self.simulator.step(dt)
 
         self.ts.append(self.elapsed)
         for ax in ["X", "Y", "Z"]:
@@ -767,6 +892,7 @@ class IMUDashboard(QMainWindow):
         self.vel_card.update_value(vel)
         self.temp_card.update_value(temp)
         self.pres_card.update_value(pressure)
+
 
         for k in ["Roll", "Pitch", "Yaw"]:
             self.gauges[k].set_value(orient[k])
@@ -801,6 +927,11 @@ class IMUDashboard(QMainWindow):
         m, s = divmod(int(self.elapsed), 60)
         h, m = divmod(m, 60)
         self.time_lbl.setText(f"T+{h:02d}:{m:02d}:{s:02d}")
+
+        # Update window title with real-time speed and altitude
+        if hasattr(self, "trajectory_page") and self.trajectory_page.last_position:
+            pos = self.trajectory_page.last_position
+            self.setWindowTitle(f"GCS Dashboard | {pos['speed']:.1f} m/s | Alt: {pos['alt']:.1f} m")
 
         ax_data = np.array(self.buffers["accel"]["X"])
         mag_mag = np.sqrt(

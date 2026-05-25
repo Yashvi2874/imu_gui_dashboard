@@ -25,9 +25,11 @@ All UI elements — value cards, arc gauges, bar indicators, attitude indicator 
 
 ```
 imu_dashboard/
-├── main.py           # Full application — single file, self-contained
+├── main.py           # Entry point and IMU dashboard tab
+├── trajectory.py     # Trajectory Page component tab
 ├── record_demo.py    # Screen recorder for demo video
 ├── requirements.txt  # Python dependencies
+├── images/           # Screenshots (dashboard.png, telemetry.png, trajectory.png)
 └── README.md         # This file
 ```
 
@@ -55,7 +57,16 @@ This records 30 seconds to `demo.avi`. Press Ctrl+C to stop early.
 
 ## Dashboard Layout
 
-The dashboard is divided into three columns separated by vertical dividers.
+The central GCS application features a tabbed interface containing two principal pages:
+
+1. **Trajectory Page**: A premium, real-time vertical tracking and flight diagnostics platform.
+2. **IMU Dashboard**: A 9-DOF real-time telemetry sensor grid.
+
+---
+
+## IMU Dashboard Layout
+
+The IMU dashboard is divided into three columns separated by vertical dividers.
 
 ![Dashboard](images/dashboard.png)
 
@@ -197,6 +208,28 @@ Click the `📋 TELEMETRY` button in the header to open the historical telemetry
 - Auto-scrolls to the latest row
 - Columns: T (s), Ax, Ay, Az (m/s²), Gx, Gy, Gz (°/s), Mx, My, Mz (µT), Roll, Pitch, Yaw (°)
 - After 60 seconds: 60 rows. After 5 minutes: 300 rows.
+
+---
+
+## Trajectory Page Layout
+
+The Trajectory Page provides real-time visualization, kinematics forecasting, and anomaly detection for a rocket launch.
+
+![Trajectory Page](images/trajectory.png)
+
+### Key Features
+
+- **Real-Time Trajectory Plots**: A primary 2D path plot (Downrange vs Altitude) alongside a synchronized Altitude Profile time-series graph.
+- **Phase-Colored Gradient Trail**: Segmented color-coding based on the active flight phase:
+  - **Burn Phase** (Red-Orange, `#FF4400`): Active engine thrust up to $10.0\text{ s}$ and peak altitude of $2800\text{ m}$.
+  - **Coast Phase** (Amber, `#FEB019`): Ballistic drift up to apogee ($25.0\text{ s}$) at $3450\text{ m}$.
+  - **Descent Phase** (Teal/Green, `#00FF88`): Parachute descent to ground level.
+- **Flight Path Prediction**: Extrapolates a 5-second dashed magenta predictive ghost trail and marks the expected future landing spot using current physics.
+- **Linked Crosshair Tracking**: Dual interactive vertical crosshairs sync coordinates across both plots simultaneously on hover to review past flight log details.
+- **Security & Anomaly Warnings**:
+  - **Geo-fence Breach**: Triggers a flashing warning alert if horizontal/vertical bounds are breached.
+  - **Anomaly Detection**: Alerts operator with a blinking label if sensors detect vertical velocity jumps $> 5\text{ m/s}$ or altitude jumps $> 10\text{ m}$ (excluding phase changes).
+- **CSV Data Recording**: Integrated record panel with blinking indicator to record live flight logs and export directly to standard CSV format.
 
 ---
 
