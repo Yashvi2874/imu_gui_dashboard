@@ -1,4 +1,4 @@
-# IMU Dashboard — Synodic Space Labs
+# IMU Dashboard - Synodic Space Labs
 
 A real-time 9-DOF IMU telemetry dashboard built with PyQt5. Visualises simulated sensor data from an Inertial Measurement Unit including accelerometer, gyroscope, magnetometer, orientation, attitude, and system health — all updating live at ~25 fps.
 
